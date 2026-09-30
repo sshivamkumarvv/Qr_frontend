@@ -7,8 +7,10 @@ function getBaseUrl(): string {
     if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
       return "http://localhost:3000/api/v1";
     }
+    // On production domains (e.g. Netlify), use relative URL to route via proxy and avoid Mixed Content
+    return "/api/v1";
   }
-  return "http://localhost:3000/api/v1";
+  return "/api/v1";
 }
 
 

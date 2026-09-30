@@ -100,7 +100,7 @@ export async function processRazorpayPayment({
     let hasResolved = false;
 
     const options = {
-      key: paymentOrder.keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "",
+      key: paymentOrder.keyId || "",
       amount: paymentOrder.amount,
       currency: paymentOrder.currency || "INR",
       name: order.restaurantName || "DineIn Restaurant",

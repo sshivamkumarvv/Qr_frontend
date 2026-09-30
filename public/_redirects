@@ -1,0 +1,2 @@
+# Proxy API requests to backend EC2 server to prevent Mixed Content & CORS
+/api/v1/*  http://51.20.123.52:3000/api/v1/:splat  200!
