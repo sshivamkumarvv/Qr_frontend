@@ -72,18 +72,16 @@ function HomeContent() {
           .then(setItems)
           .catch(() => {});
 
-        if (lat != null && lng != null) {
-          if (info.isWithinRange === true) {
-            setLocationStatus("verified");
-            setLocationError("");
-          } else if (info.isWithinRange === false) {
-            setLocationStatus("out_of_range");
-            setLocationError(
-              `You appear to be ~${info.distanceMeters}m away. Dine-in orders require being within 200m of the branch.`
-            );
-          } else {
-            setLocationStatus("verified");
-          }
+        if (info.isWithinRange === true) {
+          setLocationStatus("verified");
+          setLocationError("");
+        } else if (info.isWithinRange === false) {
+          setLocationStatus("out_of_range");
+          setLocationError(
+            `You appear to be ~${info.distanceMeters}m away. Dine-in orders require being within 200m of the branch.`
+          );
+        } else if (lat != null && lng != null) {
+          setLocationStatus("verified");
         }
         return info;
       } catch (e: any) {
@@ -162,8 +160,10 @@ function HomeContent() {
         const info = await resolveTableWithLocation(initialLat, initialLng);
         setState("ready");
 
-        // If no coordinates yet in session, actively prompt and request location permission immediately
-        if (initialLat == null || initialLng == null) {
+        // If server confirms range is verified (test mode or within range), skip GPS prompt
+        if (info?.isWithinRange === true) {
+          setLocationStatus("verified");
+        } else if (initialLat == null || initialLng == null) {
           handleRequestLocation();
         }
       } catch (e: any) {
@@ -659,6 +659,7 @@ function HomeContent() {
 
           {/* Action button for location */}
           {locationStatus !== "verified" ? (
+            <>
             <button
               onClick={handleRequestLocation}
               disabled={locationStatus === "requesting"}
@@ -711,6 +712,29 @@ function HomeContent() {
                 </>
               )}
             </button>
+            {(locationStatus === "denied" || locationStatus === "out_of_range" || locationStatus === "error") && (
+              <button
+                type="button"
+                onClick={() => {
+                  setLocationStatus("verified");
+                  setLocationError("");
+                }}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  color: "#94a3b8",
+                  fontSize: "0.75rem",
+                  textDecoration: "underline",
+                  cursor: "pointer",
+                  marginTop: "8px",
+                  width: "100%",
+                  textAlign: "center",
+                }}
+              >
+                Skip location verification (Testing Mode)
+              </button>
+            )}
+            </>
           ) : (
             <div
               style={{

@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="brandGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ff6b2b"/>
+      <stop offset="100%" stop-color="#e64a19"/>
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="8" stdDeviation="16" flood-color="#000" flood-opacity="0.2"/>
+    </filter>
+  </defs>
+
+  <!-- Background rounded squircle -->
+  <rect width="512" height="512" rx="128" fill="url(#brandGrad)"/>
+
+  <!-- Subtle glow -->
+  <circle cx="256" cy="180" r="140" fill="#ffffff" opacity="0.08" />
+
+  <!-- Cloche / Dining Icon -->
+  <g filter="url(#shadow)" fill="#ffffff">
+    <!-- Steam / Aroma -->
+    <path d="M256 90 Q266 110 256 125 T256 150" stroke="#ffffff" stroke-width="12" stroke-linecap="round" fill="none" opacity="0.9"/>
+    <path d="M220 105 Q230 120 220 135 T220 150" stroke="#ffffff" stroke-width="10" stroke-linecap="round" fill="none" opacity="0.75"/>
+    <path d="M292 105 Q302 120 292 135 T292 150" stroke="#ffffff" stroke-width="10" stroke-linecap="round" fill="none" opacity="0.75"/>
+
+    <!-- Handle knob -->
+    <circle cx="256" cy="170" r="22"/>
+
+    <!-- Cloche Dome -->
+    <path d="M110 330 C110 210, 402 210, 402 330 Z" fill="#ffffff"/>
+
+    <!-- Platter Base Rim -->
+    <rect x="80" y="340" width="352" height="24" rx="12" fill="#ffffff"/>
+    <path d="M120 364 L392 364 C370 388, 142 388, 120 364 Z" fill="#ffffff" opacity="0.85"/>
+  </g>
+</svg>
