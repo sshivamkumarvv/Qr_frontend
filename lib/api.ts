@@ -343,6 +343,23 @@ export const api = {
         method: "POST",
       }),
 
+    createUpiIntent: (orderId: string) =>
+      request<CreateUpiIntentResponse>(`/payments/orders/${orderId}/upi-intent`, {
+        method: "POST",
+      }),
+
+    verifyUpiPayment: (payload: VerifyUpiPaymentPayload) =>
+      request<{ success: boolean; message: string; order: Order }>(
+        `/payments/orders/${payload.orderId}/verify-upi`,
+        {
+          method: "POST",
+          body: JSON.stringify(payload),
+        }
+      ),
+
+    getPaymentStatus: (orderId: string) =>
+      request<PaymentStatusResponse>(`/payments/orders/${orderId}/status`),
+
     verifyPayment: (payload: VerifyPaymentPayload) =>
       request<Order>("/payments/verify", {
         method: "POST",
@@ -391,6 +408,42 @@ export interface VerifyPaymentPayload {
   razorpayOrderId: string;
   razorpayPaymentId: string;
   razorpaySignature: string;
+}
+
+export interface CreateUpiIntentResponse {
+  orderId: string;
+  amount: number;
+  currency: string;
+  merchantVpa: string;
+  merchantName: string;
+  transactionRef: string;
+  transactionNote: string;
+  upiUri: string;
+  apps: {
+    gpay: string;
+    phonepe: string;
+    paytm: string;
+    bhim: string;
+    cred: string;
+    generic: string;
+  };
+  razorpayOrderId: string | null;
+}
+
+export interface VerifyUpiPaymentPayload {
+  orderId: string;
+  transactionRef?: string;
+  utr?: string;
+  upiApp?: string;
+}
+
+export interface PaymentStatusResponse {
+  orderId: string;
+  paymentMethod: string;
+  paymentStatus: string;
+  paymentId: string | null;
+  totalAmount: number;
+  isPaid: boolean;
 }
 
 export interface MenuItem {

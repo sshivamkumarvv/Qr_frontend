@@ -6,7 +6,7 @@ import { api, storage, TableInfo, MenuItem } from "@/lib/api";
 import { useCart } from "@/lib/useCart";
 import { MenuCard } from "./menu/components/MenuCard";
 import { InlinePairingStrip } from "./menu/components/InlinePairingStrip";
-import { Sparkles, ShoppingBag, ArrowRight } from "lucide-react";
+import { Sparkles, ShoppingBag, ArrowRight, UtensilsCrossed, X, Plus, Minus, ChevronRight, Eye } from "lucide-react";
 
 // ─── Suspense wrapper required for useSearchParams in Next.js ─────────────────
 export default function HomePage() {
@@ -48,6 +48,27 @@ function HomeContent() {
   const { cart, addItem, removeItem, getQty, totalItems, totalPrice } = useCart();
   const [items, setItems] = useState<MenuItem[]>([]);
   const [pairingItem, setPairingItem] = useState<MenuItem | null>(null);
+
+  // Liquid glass modal states
+  const [showCartQuickView, setShowCartQuickView] = useState(false);
+  const [showMenuPopup, setShowMenuPopup] = useState(false);
+
+  // Derive categories from items for clean menu popup
+  const categories = React.useMemo(() => {
+    const map = new Map<string, { id: string; name: string; count: number }>();
+    map.set("ALL", { id: "ALL", name: "All Dishes", count: items.filter((i) => i.isAvailable).length });
+    items.forEach((item) => {
+      if (item.category && item.isAvailable) {
+        const existing = map.get(item.category.id);
+        if (existing) {
+          existing.count += 1;
+        } else {
+          map.set(item.category.id, { id: item.category.id, name: item.category.name, count: 1 });
+        }
+      }
+    });
+    return Array.from(map.values());
+  }, [items]);
 
   // Function to re-resolve or update table info with specific coordinates
   const resolveTableWithLocation = useCallback(
@@ -921,7 +942,7 @@ function HomeContent() {
                             triggerItem={pairingItem}
                             allItems={items}
                             cartItemIds={cart.map((c) => c.item.id)}
-                            onAdd={(p) => {
+                            onAdd={(p: MenuItem) => {
                               addItem(p);
                             }}
                             onDismiss={() => setPairingItem(null)}
@@ -936,45 +957,449 @@ function HomeContent() {
           </div>
         )}
 
-        {/* Floating Cart Indicator when items are added */}
-        {totalItems > 0 && (
-          <div
-            className="animate-fade-in-up"
+        {/* Floating Liquid Glass Dock (Menu & Cart Quick View) */}
+        <div
+          className="animate-fade-in-up"
+          style={{
+            position: "fixed",
+            bottom: "calc(max(16px, env(safe-area-inset-bottom, 16px)))",
+            left: "50%",
+            transform: "translateX(-50%)",
+            width: "calc(100% - 28px)",
+            maxWidth: "460px",
+            zIndex: 99,
+            display: "flex",
+            alignItems: "center",
+            gap: "10px",
+          }}
+        >
+          {/* Menu Button - Liquid Glass Pill */}
+          <button
+            onClick={() => setShowMenuPopup((v) => !v)}
+            className="tap-scale"
             style={{
-              position: "fixed",
-              bottom: "20px",
-              left: "50%",
-              transform: "translateX(-50%)",
-              width: "calc(100% - 32px)",
-              maxWidth: "420px",
-              zIndex: 99,
+              padding: "13px 18px",
+              borderRadius: "18px",
+              background: showMenuPopup
+                ? "var(--accent)"
+                : "var(--liquid-glass-bg)",
+              backdropFilter: "blur(28px) saturate(190%)",
+              WebkitBackdropFilter: "blur(28px) saturate(190%)",
+              border: `1.5px solid ${showMenuPopup ? "var(--accent)" : "var(--liquid-glass-border)"}`,
+              boxShadow: "var(--liquid-glass-shadow)",
+              color: showMenuPopup ? "#ffffff" : "var(--text-primary)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: "7px",
+              fontWeight: 700,
+              fontSize: "0.88rem",
+              cursor: "pointer",
+              flexShrink: 0,
+              transition: "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
             }}
           >
-            <button
-              onClick={() => router.push("/checkout")}
-              className="btn-accent tap-scale"
+            <span>{showMenuPopup ? "✕ Close" : "Menu"}</span>
+          </button>
+
+          {/* Cart Button - Liquid Glass Morphism with Quick View */}
+          <button
+            onClick={() => {
+              if (totalItems > 0) {
+                setShowCartQuickView(true);
+              } else {
+                router.push("/menu");
+              }
+            }}
+            className="tap-scale"
+            style={{
+              flex: 1,
+              padding: "13px 18px",
+              borderRadius: "18px",
+              background: totalItems > 0
+                ? "linear-gradient(135deg, var(--accent) 0%, #ea580c 100%)"
+                : "var(--liquid-glass-bg)",
+              backdropFilter: "blur(28px) saturate(190%)",
+              WebkitBackdropFilter: "blur(28px) saturate(190%)",
+              border: totalItems > 0
+                ? "1px solid rgba(255, 255, 255, 0.25)"
+                : "1.5px solid var(--liquid-glass-border)",
+              boxShadow: totalItems > 0
+                ? "0 12px 32px rgba(255, 87, 34, 0.4), inset 0 1px 1px rgba(255, 255, 255, 0.4)"
+                : "var(--liquid-glass-shadow)",
+              color: totalItems > 0 ? "#ffffff" : "var(--text-primary)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              fontWeight: 800,
+              fontSize: "0.92rem",
+              cursor: "pointer",
+              transition: "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <ShoppingBag size={18} />
+              <span>
+                {totalItems > 0
+                  ? `${totalItems} item${totalItems > 1 ? "s" : ""}`
+                  : "Explore Menu"}
+              </span>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+              {totalItems > 0 ? (
+                <>
+                  <span>₹{totalPrice}</span>
+                  <span style={{ fontSize: "0.75rem", opacity: 0.85, background: "rgba(255,255,255,0.2)", padding: "2px 7px", borderRadius: "10px" }}>
+                    Quick View
+                  </span>
+                </>
+              ) : (
+                <span style={{ fontSize: "1.1rem" }}>→</span>
+              )}
+            </div>
+          </button>
+        </div>
+
+        {/* Clean Menu Categories Popover (Name & Count, NO icons) */}
+        {showMenuPopup && (
+          <>
+            <div
+              onClick={() => setShowMenuPopup(false)}
               style={{
-                width: "100%",
-                padding: "14px 20px",
-                borderRadius: "16px",
+                position: "fixed",
+                inset: 0,
+                zIndex: 97,
+                background: "rgba(0, 0, 0, 0.35)",
+                backdropFilter: "blur(4px)",
+                WebkitBackdropFilter: "blur(4px)",
+              }}
+            />
+            <div
+              className="anim-pop"
+              style={{
+                position: "fixed",
+                bottom: "calc(max(16px, env(safe-area-inset-bottom, 16px)) + 62px)",
+                left: "14px",
+                width: "270px",
+                maxHeight: "360px",
+                zIndex: 98,
+                background: "var(--bg-card)",
+                backdropFilter: "blur(28px)",
+                WebkitBackdropFilter: "blur(28px)",
+                border: "1px solid var(--border)",
+                borderRadius: "20px",
+                boxShadow: "var(--card-shadow)",
                 display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                fontWeight: 800,
-                fontSize: "0.95rem",
-                boxShadow: "0 10px 30px rgba(0,0,0,0.5), 0 0 20px var(--accent-glow)",
+                flexDirection: "column",
+                overflow: "hidden",
               }}
             >
-              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                <ShoppingBag size={18} />
-                <span>{totalItems} item{totalItems > 1 ? "s" : ""} added</span>
+              <div
+                style={{
+                  padding: "13px 16px",
+                  borderBottom: "1px solid var(--border)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                }}
+              >
+                <span style={{ fontSize: "0.85rem", fontWeight: 800, color: "var(--text-primary)" }}>
+                  Menu Categories
+                </span>
+                <span
+                  style={{
+                    fontSize: "0.72rem",
+                    color: "var(--accent)",
+                    background: "var(--accent-bg)",
+                    border: "1px solid var(--accent-border)",
+                    padding: "2px 8px",
+                    borderRadius: "10px",
+                    fontWeight: 700,
+                  }}
+                >
+                  {categories.length}
+                </span>
               </div>
-              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                <span>₹{totalPrice}</span>
-                <span>• Checkout →</span>
+              <div
+                className="hide-scrollbar"
+                style={{
+                  overflowY: "auto",
+                  padding: "8px 10px 10px",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "5px",
+                }}
+              >
+                {categories.map((cat) => (
+                  <button
+                    key={cat.id}
+                    onClick={() => {
+                      setShowMenuPopup(false);
+                      router.push(`/menu?cat=${cat.id}`);
+                    }}
+                    className="tap-scale"
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      padding: "10px 14px",
+                      borderRadius: "12px",
+                      border: "1px solid transparent",
+                      background: "var(--tag-bg)",
+                      color: "var(--text-primary)",
+                      cursor: "pointer",
+                      textAlign: "left",
+                      fontSize: "0.88rem",
+                      fontWeight: 600,
+                      transition: "all 0.15s ease",
+                    }}
+                  >
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {cat.name}
+                    </span>
+                    <span
+                      style={{
+                        fontSize: "0.74rem",
+                        padding: "2px 8px",
+                        borderRadius: "10px",
+                        background: "var(--border)",
+                        color: "var(--text-muted)",
+                        fontWeight: 700,
+                        marginLeft: "8px",
+                      }}
+                    >
+                      {cat.count}
+                    </span>
+                  </button>
+                ))}
               </div>
-            </button>
-          </div>
+            </div>
+          </>
+        )}
+
+        {/* Liquid Glass Cart Quick View Sheet */}
+        {showCartQuickView && (
+          <>
+            <div
+              onClick={() => setShowCartQuickView(false)}
+              style={{
+                position: "fixed",
+                inset: 0,
+                zIndex: 100,
+                background: "rgba(0, 0, 0, 0.55)",
+                backdropFilter: "blur(6px)",
+                WebkitBackdropFilter: "blur(6px)",
+              }}
+            />
+            <div
+              className="anim-slide-up"
+              style={{
+                position: "fixed",
+                bottom: 0,
+                left: "50%",
+                transform: "translateX(-50%)",
+                width: "100%",
+                maxWidth: "520px",
+                maxHeight: "82dvh",
+                zIndex: 101,
+                background: "var(--bg-secondary)",
+                borderTop: "1px solid var(--liquid-glass-border)",
+                borderRadius: "28px 28px 0 0",
+                boxShadow: "0 -20px 50px rgba(0, 0, 0, 0.35)",
+                display: "flex",
+                flexDirection: "column",
+                overflow: "hidden",
+              }}
+            >
+              {/* Header */}
+              <div
+                style={{
+                  padding: "16px 20px",
+                  borderBottom: "1px solid var(--border)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                }}
+              >
+                <div>
+                  <h3 style={{ fontSize: "1.05rem", fontWeight: 800, margin: 0 }}>
+                    Table Cart
+                  </h3>
+                  <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
+                    {totalItems} item{totalItems > 1 ? "s" : ""} selected for Table {tableInfo?.tableNumber}
+                  </span>
+                </div>
+                <button
+                  onClick={() => setShowCartQuickView(false)}
+                  style={{
+                    width: "32px",
+                    height: "32px",
+                    borderRadius: "50%",
+                    background: "var(--tag-bg)",
+                    border: "none",
+                    color: "var(--text-secondary)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    cursor: "pointer",
+                  }}
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              {/* Items List */}
+              <div
+                className="hide-scrollbar"
+                style={{
+                  overflowY: "auto",
+                  padding: "14px 20px",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "12px",
+                  flex: 1,
+                }}
+              >
+                {cart.map((cartItem) => {
+                  const price = Number(cartItem.item.dineInPrice ?? cartItem.item.discountedPrice ?? cartItem.item.price) || 0;
+                  const itemSubtotal = price * cartItem.quantity;
+
+                  return (
+                    <div
+                      key={cartItem.item.id}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        padding: "10px 14px",
+                        background: "var(--bg-card)",
+                        border: "1px solid var(--border)",
+                        borderRadius: "14px",
+                        gap: "12px",
+                      }}
+                    >
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: "0.9rem", fontWeight: 700, color: "var(--text-primary)" }}>
+                          {cartItem.item.name}
+                        </div>
+                        <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
+                          ₹{price} each
+                        </div>
+                      </div>
+
+                      {/* Quantity Controls */}
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "8px",
+                          background: "var(--accent-bg)",
+                          border: "1px solid var(--accent-border)",
+                          borderRadius: "10px",
+                          padding: "4px 8px",
+                        }}
+                      >
+                        <button
+                          onClick={() => removeItem(cartItem.item.id)}
+                          style={{
+                            background: "transparent",
+                            border: "none",
+                            color: "var(--accent)",
+                            cursor: "pointer",
+                            display: "flex",
+                            alignItems: "center",
+                            padding: "2px",
+                          }}
+                        >
+                          <Minus size={14} />
+                        </button>
+                        <span style={{ fontSize: "0.85rem", fontWeight: 800, minWidth: "16px", textAlign: "center", color: "var(--accent)" }}>
+                          {cartItem.quantity}
+                        </span>
+                        <button
+                          onClick={() => addItem(cartItem.item)}
+                          style={{
+                            background: "transparent",
+                            border: "none",
+                            color: "var(--accent)",
+                            cursor: "pointer",
+                            display: "flex",
+                            alignItems: "center",
+                            padding: "2px",
+                          }}
+                        >
+                          <Plus size={14} />
+                        </button>
+                      </div>
+
+                      <div style={{ fontSize: "0.92rem", fontWeight: 800, minWidth: "55px", textAlign: "right", color: "var(--text-primary)" }}>
+                        ₹{itemSubtotal}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Bottom Footer & CTAs */}
+              <div
+                style={{
+                  padding: "16px 20px calc(max(16px, env(safe-area-inset-bottom, 16px)))",
+                  borderTop: "1px solid var(--border)",
+                  background: "var(--bg-card)",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "10px",
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>Cart Total</span>
+                  <span style={{ fontSize: "1.15rem", fontWeight: 900, color: "var(--text-primary)" }}>
+                    ₹{totalPrice}
+                  </span>
+                </div>
+
+                <button
+                  onClick={() => {
+                    setShowCartQuickView(false);
+                    router.push("/checkout");
+                  }}
+                  className="btn-accent tap-scale"
+                  style={{
+                    width: "100%",
+                    padding: "14px",
+                    borderRadius: "14px",
+                    fontSize: "0.95rem",
+                    fontWeight: 800,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "8px",
+                    boxShadow: "0 8px 24px var(--accent-glow)",
+                    cursor: "pointer",
+                  }}
+                >
+                  <span>Proceed to Checkout</span>
+                  <span>→</span>
+                </button>
+
+                <button
+                  onClick={() => setShowCartQuickView(false)}
+                  style={{
+                    width: "100%",
+                    padding: "8px",
+                    background: "transparent",
+                    border: "none",
+                    color: "var(--text-muted)",
+                    fontSize: "0.8rem",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  + Add more dishes
+                </button>
+              </div>
+            </div>
+          </>
         )}
 
         <p
@@ -984,6 +1409,7 @@ function HomeContent() {
             color: "var(--text-muted)",
             fontSize: "0.75rem",
             textAlign: "center",
+            paddingBottom: "80px",
           }}
         >
           {locationStatus === "verified"
@@ -996,6 +1422,21 @@ function HomeContent() {
 }
 
 function LoadingScreen() {
+  const [phase, setPhase] = useState(0);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setPhase((p) => (p + 1) % 3);
+    }, 1800);
+    return () => clearInterval(interval);
+  }, []);
+
+  const phrases = [
+    "Connecting to your table...",
+    "Curating fresh kitchen menu...",
+    "Preparing your digital dining...",
+  ];
+
   return (
     <main
       style={{
@@ -1004,42 +1445,142 @@ function LoadingScreen() {
         flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
-        gap: "20px",
-        background: "var(--bg-primary)",
+        padding: "24px",
+        background: "radial-gradient(ellipse at center, rgba(255, 87, 34, 0.08) 0%, var(--bg-primary) 70%)",
+        position: "relative",
+        overflow: "hidden",
       }}
     >
+      {/* Ambient pulsating glow */}
       <div
         style={{
-          width: "64px",
-          height: "64px",
-          borderRadius: "20px",
-          background: "linear-gradient(135deg, #ff6b2b, #ff9a3c)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          fontSize: "28px",
-          boxShadow: "0 10px 40px rgba(255,107,43,0.3)",
+          position: "absolute",
+          width: "280px",
+          height: "280px",
+          borderRadius: "50%",
+          background: "radial-gradient(circle, var(--accent-glow) 0%, transparent 70%)",
+          filter: "blur(40px)",
+          pointerEvents: "none",
+          animation: "loaderGlowPulse 3s infinite ease-in-out",
         }}
-      >
-        🍽️
+      />
+
+      {/* Center Animated Disc & Orbital Rings */}
+      <div style={{ position: "relative", width: "110px", height: "110px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        {/* Outer orbital dash ring */}
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            borderRadius: "50%",
+            border: "2px dashed var(--accent-border)",
+            animation: "loaderSpinClockwise 9s linear infinite",
+          }}
+        />
+
+        {/* Counter-rotating glowing accent arc */}
+        <div
+          style={{
+            position: "absolute",
+            inset: "-4px",
+            borderRadius: "50%",
+            border: "2.5px solid transparent",
+            borderTopColor: "var(--accent)",
+            borderRightColor: "var(--accent-2)",
+            animation: "loaderSpinCounter 1.8s cubic-bezier(0.5, 0, 0.5, 1) infinite",
+            filter: "drop-shadow(0 0 8px var(--accent-glow))",
+          }}
+        />
+
+        {/* Inner liquid glass badge */}
+        <div
+          style={{
+            width: "72px",
+            height: "72px",
+            borderRadius: "22px",
+            background: "linear-gradient(135deg, rgba(255, 255, 255, 0.15) 0%, rgba(255, 255, 255, 0.04) 100%)",
+            backdropFilter: "blur(16px)",
+            WebkitBackdropFilter: "blur(16px)",
+            border: "1px solid rgba(255, 255, 255, 0.25)",
+            boxShadow: "0 14px 28px rgba(0, 0, 0, 0.25), inset 0 1px 1px rgba(255, 255, 255, 0.4)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            animation: "loaderBadgeFloat 2.5s ease-in-out infinite",
+          }}
+        >
+          <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--accent)" }}>
+            <path d="M18 11V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v0" />
+            <path d="M4 10a8 8 0 0 1 16 0v2H4z" />
+            <path d="M2 14h20v2a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z" />
+            <path d="M12 2v2" />
+          </svg>
+        </div>
       </div>
-      <div style={{ display: "flex", gap: "6px" }}>
-        {[0, 1, 2].map((i) => (
+
+      {/* Shimmering Dynamic Text */}
+      <div style={{ marginTop: "28px", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: "8px" }}>
+        <p
+          key={phase}
+          className="anim-pop"
+          style={{
+            color: "var(--text-primary)",
+            fontSize: "1.02rem",
+            fontWeight: 700,
+            letterSpacing: "0.01em",
+            margin: 0,
+          }}
+        >
+          {phrases[phase]}
+        </p>
+
+        {/* Liquid progress bar */}
+        <div
+          style={{
+            width: "120px",
+            height: "4px",
+            borderRadius: "4px",
+            background: "rgba(255, 255, 255, 0.08)",
+            overflow: "hidden",
+            position: "relative",
+            marginTop: "4px",
+          }}
+        >
           <div
-            key={i}
             style={{
-              width: "8px",
-              height: "8px",
-              borderRadius: "50%",
-              background: "var(--accent)",
-              animation: `dot-bounce 1.2s ease-in-out ${i * 0.2}s infinite`,
+              position: "absolute",
+              height: "100%",
+              width: "45%",
+              background: "linear-gradient(90deg, transparent, var(--accent), transparent)",
+              borderRadius: "4px",
+              animation: "loaderShimmerLine 1.4s infinite ease-in-out",
             }}
           />
-        ))}
+        </div>
       </div>
-      <p style={{ color: "var(--text-secondary)", fontSize: "0.9rem" }}>
-        Scanning your table...
-      </p>
+
+      <style jsx>{`
+        @keyframes loaderSpinClockwise {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+        @keyframes loaderSpinCounter {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(-360deg); }
+        }
+        @keyframes loaderBadgeFloat {
+          0%, 100% { transform: translateY(0) scale(1); }
+          50% { transform: translateY(-4px) scale(1.04); }
+        }
+        @keyframes loaderGlowPulse {
+          0%, 100% { opacity: 0.4; transform: scale(0.9); }
+          50% { opacity: 0.85; transform: scale(1.15); }
+        }
+        @keyframes loaderShimmerLine {
+          0% { left: -45%; }
+          100% { left: 100%; }
+        }
+      `}</style>
     </main>
   );
 }

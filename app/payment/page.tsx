@@ -66,6 +66,7 @@ function PaymentContent() {
       });
 
       setOrder(updatedOrder);
+      router.push(`/checkout?orderId=${order.id}&payment=success`);
     } catch (err: any) {
       if (err instanceof PaymentCancelledError) {
         setErrorMessage("Payment was cancelled. You can try again whenever you are ready.");

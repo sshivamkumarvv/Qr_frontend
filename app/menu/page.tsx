@@ -24,7 +24,6 @@ export default function MenuPage() {
   const [activeCategory, setActiveCategory] = useState<string>("ALL");
   const [jumpedCat, setJumpedCat] = useState<string | null>(null);
   const [showCart, setShowCart] = useState(false);
-  const [showQuickCart, setShowQuickCart] = useState(false);
   const [showCategoryMenu, setShowCategoryMenu] = useState(false);
   const [showOptionsMenu, setShowOptionsMenu] = useState(false);
   const [search, setSearch] = useState("");
@@ -485,6 +484,9 @@ export default function MenuPage() {
         selectCategory={selectCategory}
         isRealFilter={isRealFilter}
         items={items}
+        cart={cart}
+        onAdd={(item, portion, instructions, addOnIds) => addItem(item, portion, instructions, addOnIds)}
+        onRemove={(id, portion, addOnIds) => removeItem(id, portion, addOnIds)}
       />
 
       {/* Item Detail Sheet (Customization only - no recommended items inside) */}
@@ -499,59 +501,7 @@ export default function MenuPage() {
         />
       )}
 
-      {/* Quick Cart popover for larger screens */}
-      {showQuickCart && (
-        <div
-          className="anim-fade-up"
-          style={{
-            position: "fixed",
-            right: 12,
-            bottom: 140,
-            zIndex: 60,
-            width: 360,
-            maxWidth: "calc(100% - 24px)",
-            borderRadius: 14,
-            background: "var(--bg-card)",
-            border: "1px solid var(--border)",
-            boxShadow: "0 12px 40px rgba(0,0,0,0.6)",
-            overflow: "hidden",
-          }}
-        >
-          <div style={{ padding: 12, borderBottom: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <strong>Your cart</strong>
-            <button onClick={() => setShowQuickCart(false)} style={{ border: "none", background: "none", color: "var(--text-muted)", cursor: "pointer" }} aria-label="Close quick cart">✕</button>
-          </div>
-          <div style={{ maxHeight: 260, overflow: "auto", padding: 12 }}>
-            {cart.length === 0 ? (
-              <div style={{ color: "var(--text-muted)", padding: 12 }}>Your cart is empty</div>
-            ) : (
-              cart.map((c) => (
-                <div key={`${c.item.id}-${c.portion}-${(c.addOnIds ?? []).join("-")}`} style={{ display: "flex", justifyContent: "space-between", gap: 12, padding: "8px 0", alignItems: "center" }}>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontWeight: 700 }}>{c.item.name}</div>
-                    <div style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>₹{c.unitPrice ?? (c.item.dineInPrice ?? c.item.discountedPrice ?? c.item.price)} × {c.quantity}</div>
-                  </div>
-                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                    <button className="qty-btn tap-scale" onClick={() => { removeItem(c.item.id, c.portion, c.addOnIds); }} aria-label={`Remove one ${c.item.name}`}>−</button>
-                    <div style={{ minWidth: 20, textAlign: "center", fontWeight: 700 }}>{c.quantity}</div>
-                    <button className="qty-btn tap-scale" onClick={() => { addItem(c.item, c.portion, c.specialInstructions, c.addOnIds); }} aria-label={`Add one ${c.item.name}`}>+</button>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-          <div style={{ padding: 12, borderTop: "1px solid var(--border)", display: "flex", justifyContent: "space-between", gap: 12 }}>
-            <div>
-              <div style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>Subtotal</div>
-              <div style={{ fontWeight: 800 }}>₹{totalPrice.toFixed(0)}</div>
-            </div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <button className="btn-ghost tap-scale" onClick={() => { setShowQuickCart(false); router.push("/checkout"); }}>Open</button>
-              <button className="btn-accent tap-scale" onClick={() => { setShowQuickCart(false); router.push("/checkout"); }}>Checkout</button>
-            </div>
-          </div>
-        </div>
-      )}
+
 
       {/* Cart Sheet */}
       {showCart && (

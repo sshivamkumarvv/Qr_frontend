@@ -1,12 +1,37 @@
 "use client";
 
-import React, { useEffect, useState, useRef } from "react";
-import { useRouter } from "next/navigation";
+import React, { Suspense, useEffect, useState, useRef } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { api, storage, CartItem, PaymentMethod, TableInfo, Order } from "@/lib/api";
 import { processRazorpayPayment, PaymentCancelledError } from "@/lib/razorpay";
 
 export default function CheckoutPage() {
+  return (
+    <Suspense
+      fallback={
+        <div
+          style={{
+            minHeight: "100dvh",
+            background: "var(--bg-primary)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <div className="spinner" />
+        </div>
+      }
+    >
+      <CheckoutContent />
+    </Suspense>
+  );
+}
+
+function CheckoutContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const paymentParam = searchParams.get("payment");
+  const orderIdParam = searchParams.get("orderId");
 
   const [cart, setCart] = useState<CartItem[]>([]);
   const [tableInfo, setTableInfo] = useState<TableInfo | null>(null);
@@ -17,6 +42,11 @@ export default function CheckoutPage() {
   const [paymentStatusText, setPaymentStatusText] = useState("");
   const [error, setError] = useState("");
   const [toast, setToast] = useState<{ msg: string; type: string } | null>(null);
+
+  // Placed order success state (replaces redirecting to orders tracking screen)
+  const [placedOrder, setPlacedOrder] = useState<Order | null>(null);
+  const [redirectCountdown, setRedirectCountdown] = useState<number>(4);
+  const orderSuccessRef = useRef<HTMLDivElement | null>(null);
 
   // Digital Bill / Phone contact state
   const [phone, setPhone] = useState("");
@@ -77,6 +107,33 @@ export default function CheckoutPage() {
       setLocationStatus("verified");
     }
   }, []);
+
+  // Auto-load order and scroll to confirmation when returning from payment
+  useEffect(() => {
+    if (orderIdParam) {
+      api.orders.findOne(orderIdParam).then((od) => {
+        setPlacedOrder(od);
+        storage.setCart([]);
+        setCart([]);
+        setTimeout(() => {
+          orderSuccessRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+        }, 120);
+      }).catch(() => {});
+    }
+  }, [orderIdParam, paymentParam]);
+
+  // Countdown timer to redirect to menu after order confirmation
+  useEffect(() => {
+    if (!placedOrder) return;
+    if (redirectCountdown <= 0) {
+      router.push("/menu");
+      return;
+    }
+    const timer = setTimeout(() => {
+      setRedirectCountdown((prev) => prev - 1);
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [placedOrder, redirectCountdown, router]);
 
   const totalItems = cart.reduce((sum, c) => sum + (Number(c.quantity) || 0), 0);
   const itemTotal = cart.reduce((sum, c) => {
@@ -262,8 +319,10 @@ export default function CheckoutPage() {
           // Payment verified successfully
           storage.setCart([]);
           setCart([]);
-          showToast("Payment successful! Bill sent to " + activeUser.phone, "success");
-          router.push(`/orders/${order.id}`);
+          setPlacedOrder(order);
+          setTimeout(() => {
+            orderSuccessRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+          }, 80);
         } catch (payErr: any) {
           if (payErr instanceof PaymentCancelledError) {
             setPendingOrder(order);
@@ -283,8 +342,10 @@ export default function CheckoutPage() {
         // Pay at counter / Cash on delivery
         storage.setCart([]);
         setCart([]);
-        showToast("Order placed! Bill will be sent to " + activeUser.phone, "success");
-        router.push(`/orders/${order.id}`);
+        setPlacedOrder(order);
+        setTimeout(() => {
+          orderSuccessRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+        }, 80);
       }
     } catch (err: any) {
       const msg = err.message || "Failed to place order. Please try again.";
@@ -317,8 +378,10 @@ export default function CheckoutPage() {
 
       storage.setCart([]);
       setCart([]);
-      showToast("Payment confirmed! Sent to kitchen.", "success");
-      router.push(`/orders/${pendingOrder.id}`);
+      setPlacedOrder(pendingOrder);
+      setTimeout(() => {
+        orderSuccessRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 80);
     } catch (payErr: any) {
       if (payErr instanceof PaymentCancelledError) {
         showToast("Payment cancelled.", "info");
@@ -427,8 +490,132 @@ export default function CheckoutPage() {
           gap: "14px",
         }}
       >
+        {/* Order Placed Confirmation Section */}
+        {placedOrder && (
+          <section
+            ref={orderSuccessRef}
+            className="anim-pop"
+            style={{
+              width: "100%",
+              background: "var(--bg-card)",
+              borderRadius: "24px",
+              border: "1.5px solid rgba(34, 197, 94, 0.4)",
+              boxShadow: "0 16px 40px rgba(34, 197, 94, 0.15), 0 0 20px rgba(34, 197, 94, 0.1)",
+              padding: "32px 20px",
+              textAlign: "center",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: "14px",
+              marginBottom: "10px",
+            }}
+          >
+            {/* Animated Celebration Ring */}
+            <div
+              style={{
+                width: "72px",
+                height: "72px",
+                borderRadius: "50%",
+                background: "rgba(34, 197, 94, 0.15)",
+                border: "2.5px solid #22c55e",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: "32px",
+                color: "#22c55e",
+                boxShadow: "0 0 30px rgba(34, 197, 94, 0.35)",
+              }}
+            >
+              ✓
+            </div>
+
+            <div>
+              <h2 style={{ fontSize: "1.35rem", fontWeight: 900, margin: "0 0 4px", color: "var(--text-primary)" }}>
+                Order Placed Successfully!
+              </h2>
+              <p style={{ margin: 0, fontSize: "0.85rem", color: "var(--text-muted)" }}>
+                Order #{placedOrder.id.slice(0, 8).toUpperCase()} • Table {tableInfo?.tableNumber}
+              </p>
+            </div>
+
+            <div
+              style={{
+                background: "rgba(34, 197, 94, 0.08)",
+                border: "1px solid rgba(34, 197, 94, 0.25)",
+                borderRadius: "14px",
+                padding: "12px 18px",
+                width: "100%",
+                fontSize: "0.88rem",
+                color: "#22c55e",
+                fontWeight: 600,
+              }}
+            >
+              👨‍🍳 Sent to kitchen — your meal is being prepared!
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                width: "100%",
+                padding: "12px 16px",
+                background: "var(--tag-bg)",
+                borderRadius: "14px",
+                fontSize: "0.88rem",
+              }}
+            >
+              <span style={{ color: "var(--text-muted)" }}>
+                Amount {placedOrder.paymentStatus === "paid" ? "Paid (Online)" : "Due at Counter"}
+              </span>
+              <strong style={{ fontSize: "1.08rem", color: "var(--text-primary)" }}>
+                ₹{placedOrder.totalAmount ?? placedOrder.total ?? grandTotal}
+              </strong>
+            </div>
+
+            {/* Countdown notice */}
+            <p style={{ fontSize: "0.78rem", color: "var(--text-muted)", margin: "4px 0" }}>
+              Redirecting to menu in {redirectCountdown}s...
+            </p>
+
+            {/* CTAs */}
+            <div style={{ display: "flex", gap: "10px", width: "100%" }}>
+              <button
+                onClick={() => router.push("/menu")}
+                className="btn-accent tap-scale"
+                style={{
+                  flex: 1,
+                  padding: "13px 16px",
+                  borderRadius: "14px",
+                  fontWeight: 700,
+                  fontSize: "0.92rem",
+                  cursor: "pointer",
+                }}
+              >
+                Back to Menu →
+              </button>
+              <button
+                onClick={() => router.push("/")}
+                className="tap-scale"
+                style={{
+                  padding: "13px 18px",
+                  borderRadius: "14px",
+                  background: "var(--tag-bg)",
+                  border: "1px solid var(--border)",
+                  color: "var(--text-primary)",
+                  fontWeight: 700,
+                  fontSize: "0.92rem",
+                  cursor: "pointer",
+                }}
+              >
+                Home
+              </button>
+            </div>
+          </section>
+        )}
+
         {/* Error / Pending Order Banner */}
-        {error && (
+        {!placedOrder && error && (
           <div
             className="animate-fade-in"
             style={{
@@ -1277,79 +1464,99 @@ export default function CheckoutPage() {
         </div>
       </main>
 
-      {/* ── Fixed Bottom Placement Dock ── */}
-      <footer
-        style={{
-          position: "fixed",
-          bottom: 0,
-          left: 0,
-          right: 0,
-          zIndex: 30,
-          background: "var(--bg-dock)",
-          backdropFilter: "blur(20px)",
-          WebkitBackdropFilter: "blur(20px)",
-          borderTop: "1px solid var(--border)",
-          padding: "12px 16px",
-          paddingBottom: "max(12px, env(safe-area-inset-bottom, 12px))",
-        }}
-      >
-        <div
+      {/* ── Fixed Bottom Placement Dock (Hidden once order is placed) ── */}
+      {!placedOrder && (
+        <footer
           style={{
-            maxWidth: "600px",
-            margin: "0 auto",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: "12px",
+            position: "fixed",
+            bottom: 0,
+            left: 0,
+            right: 0,
+            zIndex: 30,
+            background: "var(--bg-dock)",
+            backdropFilter: "blur(20px)",
+            WebkitBackdropFilter: "blur(20px)",
+            borderTop: "1px solid var(--border)",
+            padding: "12px 16px",
+            paddingBottom: "max(12px, env(safe-area-inset-bottom, 12px))",
           }}
         >
-          <div>
-            <span style={{ fontSize: "0.7rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
-              Total Amount
-            </span>
-            <div style={{ fontSize: "1.25rem", fontWeight: 900, color: "var(--text-primary)", lineHeight: 1.1 }}>
-              ₹{(Number(grandTotal) || 0).toFixed(2)}
-            </div>
-          </div>
-
-          <button
-            className="btn-accent tap-scale"
-            onClick={handlePlaceOrder}
-            disabled={loading || cart.length === 0 || !acceptedTerms}
+          <div
             style={{
-              flex: 1,
-              maxWidth: "280px",
-              height: "50px",
-              borderRadius: "14px",
-              fontSize: "0.95rem",
-              fontWeight: 800,
+              maxWidth: "600px",
+              margin: "0 auto",
               display: "flex",
               alignItems: "center",
-              justifyContent: "center",
-              gap: "8px",
-              boxShadow: acceptedTerms ? "0 8px 24px var(--accent-glow)" : "none",
-              opacity: acceptedTerms ? 1 : 0.6,
-              cursor: acceptedTerms ? "pointer" : "not-allowed",
+              justifyContent: "space-between",
+              gap: "12px",
             }}
           >
-            {loading ? (
-              <>
-                <span className="spinner" />
-                <span style={{ fontSize: "0.85rem" }}>{paymentStatusText || "Submitting..."}</span>
-              </>
-            ) : (
-              <>
-                <span>{paymentMethod === "online" ? "Pay & Place Order" : "Place Order"}</span>
-                <span style={{ fontSize: "1.1rem" }}>→</span>
-              </>
-            )}
-          </button>
-        </div>
-      </footer>
+            <div>
+              <span style={{ fontSize: "0.7rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                Total Amount
+              </span>
+              <div style={{ fontSize: "1.25rem", fontWeight: 900, color: "var(--text-primary)", lineHeight: 1.1 }}>
+                ₹{(Number(grandTotal) || 0).toFixed(2)}
+              </div>
+            </div>
 
-      {/* Toast Notification */}
+            <button
+              className="btn-accent tap-scale"
+              onClick={handlePlaceOrder}
+              disabled={loading || cart.length === 0 || !acceptedTerms}
+              style={{
+                flex: 1,
+                maxWidth: "280px",
+                height: "50px",
+                borderRadius: "14px",
+                fontSize: "0.95rem",
+                fontWeight: 800,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "8px",
+                boxShadow: acceptedTerms ? "0 8px 24px var(--accent-glow)" : "none",
+                opacity: acceptedTerms ? 1 : 0.6,
+                cursor: acceptedTerms ? "pointer" : "not-allowed",
+              }}
+            >
+              {loading ? (
+                <>
+                  <span className="spinner" />
+                  <span style={{ fontSize: "0.85rem" }}>{paymentStatusText || "Submitting..."}</span>
+                </>
+              ) : (
+                <>
+                  <span>{paymentMethod === "online" ? "Pay & Place Order" : "Place Order"}</span>
+                  <span style={{ fontSize: "1.1rem" }}>→</span>
+                </>
+              )}
+            </button>
+          </div>
+        </footer>
+      )}
+
+      {/* Non-blocking Mobile Toast */}
       {toast && (
-        <div className={`toast toast-${toast.type} anim-pop`}>
+        <div
+          className={`toast toast-${toast.type} anim-pop`}
+          style={{
+            position: "fixed",
+            bottom: placedOrder ? "24px" : "86px",
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 9999,
+            borderRadius: "14px",
+            padding: "10px 18px",
+            fontSize: "0.85rem",
+            fontWeight: 600,
+            backdropFilter: "blur(16px)",
+            WebkitBackdropFilter: "blur(16px)",
+            boxShadow: "0 10px 30px rgba(0, 0, 0, 0.35)",
+            maxWidth: "calc(100% - 32px)",
+            textAlign: "center",
+          }}
+        >
           {toast.msg}
         </div>
       )}

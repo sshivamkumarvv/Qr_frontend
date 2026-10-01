@@ -32,6 +32,9 @@ export const viewport: Viewport = {
   viewportFit: "cover",
 };
 
+import React, { Suspense } from "react";
+import { NavigationProgress } from "@/app/components/NavigationProgress";
+
 export default function RootLayout({
   children,
 }: {
@@ -82,6 +85,9 @@ export default function RootLayout({
       </head>
       <body>
         <ThemeProvider>
+          <Suspense fallback={null}>
+            <NavigationProgress />
+          </Suspense>
           {children}
           <PwaRegister />
         </ThemeProvider>
