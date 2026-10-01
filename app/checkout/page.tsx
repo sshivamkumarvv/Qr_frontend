@@ -4,6 +4,7 @@ import React, { Suspense, useEffect, useState, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { api, storage, CartItem, PaymentMethod, TableInfo, Order } from "@/lib/api";
 import { processRazorpayPayment, PaymentCancelledError } from "@/lib/razorpay";
+import UpiPaymentModal from "@/app/components/UpiPaymentModal";
 
 export default function CheckoutPage() {
   return (
@@ -57,6 +58,8 @@ function CheckoutContent() {
 
   // Pending order if payment was cancelled
   const [pendingOrder, setPendingOrder] = useState<Order | null>(null);
+  const [activeUpiOrder, setActiveUpiOrder] = useState<Order | null>(null);
+  const [upiModalOpen, setUpiModalOpen] = useState(false);
 
   // Location state
   const [locationStatus, setLocationStatus] = useState<"idle" | "requesting" | "verified" | "error">("idle");
@@ -302,42 +305,9 @@ function CheckoutContent() {
 
       // 4. Handle Payment Flow
       if (paymentMethod === "online") {
-        setPaymentStatusText("Opening secure payment gateway...");
-        try {
-          // Process Razorpay directly in-place without page hopping
-          await processRazorpayPayment({
-            order: {
-              id: order.id,
-              restaurantName: tableInfo?.branchName || "Restaurant Dine-In",
-              customerName: activeUser.fullName,
-              customerPhone: activeUser.phone,
-              total: grandTotal,
-            },
-            user: activeUser,
-          });
-
-          // Payment verified successfully
-          storage.setCart([]);
-          setCart([]);
-          setPlacedOrder(order);
-          setTimeout(() => {
-            orderSuccessRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-          }, 80);
-        } catch (payErr: any) {
-          if (payErr instanceof PaymentCancelledError) {
-            setPendingOrder(order);
-            setError(
-              "Payment window was closed. Order #" +
-                order.id.slice(0, 8).toUpperCase() +
-                " was registered. You can retry payment below or switch to Pay at Counter."
-            );
-            showToast("Payment cancelled.", "info");
-          } else {
-            setPendingOrder(order);
-            setError(payErr.message || "Payment verification failed. Please retry or choose Pay at Counter.");
-            showToast(payErr.message || "Payment failed", "error");
-          }
-        }
+        setPendingOrder(order);
+        setActiveUpiOrder(order);
+        setUpiModalOpen(true);
       } else {
         // Pay at counter / Cash on delivery
         storage.setCart([]);
@@ -357,42 +327,68 @@ function CheckoutContent() {
     }
   };
 
-  // Retry payment for an existing pending order
-  const handleRetryPendingPayment = async () => {
-    if (!pendingOrder || !user) return;
-    setLoading(true);
-    setPaymentStatusText("Reopening payment gateway...");
-    setError("");
+  // Callback when UPI payment succeeds
+  const handleUpiSuccess = (verifiedOrder: Order) => {
+    storage.setCart([]);
+    setCart([]);
+    setPlacedOrder(verifiedOrder);
+    setPendingOrder(null);
+    setActiveUpiOrder(null);
+    setUpiModalOpen(false);
+    setTimeout(() => {
+      orderSuccessRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 80);
+  };
 
+  // Fallback to Razorpay if user explicitly chooses cards/netbanking
+  const handleRazorpayFallback = async () => {
+    if (!activeUpiOrder) return;
+    setUpiModalOpen(false);
+    setPaymentStatusText("Opening card / netbanking gateway...");
+    setLoading(true);
     try {
+      const activeUser = user || {
+        id: "guest",
+        fullName: fullName.trim() || "Guest",
+        phone: phone.trim() || "9999999999",
+      };
       await processRazorpayPayment({
         order: {
-          id: pendingOrder.id,
+          id: activeUpiOrder.id,
           restaurantName: tableInfo?.branchName || "Restaurant Dine-In",
-          customerName: user.fullName,
-          customerPhone: user.phone,
+          customerName: activeUser.fullName,
+          customerPhone: activeUser.phone,
           total: grandTotal,
         },
-        user,
+        user: activeUser,
       });
 
       storage.setCart([]);
       setCart([]);
-      setPlacedOrder(pendingOrder);
+      setPlacedOrder(activeUpiOrder);
+      setPendingOrder(null);
+      setActiveUpiOrder(null);
       setTimeout(() => {
         orderSuccessRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
       }, 80);
     } catch (payErr: any) {
       if (payErr instanceof PaymentCancelledError) {
-        showToast("Payment cancelled.", "info");
+        showToast("Payment window closed.", "info");
       } else {
-        setError(payErr.message || "Payment failed. You can also pay cash at counter.");
+        setError(payErr.message || "Payment verification failed.");
         showToast(payErr.message || "Payment failed", "error");
       }
     } finally {
       setLoading(false);
       setPaymentStatusText("");
     }
+  };
+
+  // Retry payment for an existing pending order
+  const handleRetryPendingPayment = async () => {
+    if (!pendingOrder) return;
+    setActiveUpiOrder(pendingOrder);
+    setUpiModalOpen(true);
   };
 
   return (
@@ -1282,8 +1278,8 @@ function CheckoutContent() {
                   }}
                 />
               </div>
-              <p style={{ margin: "4px 0 0", fontWeight: 800, fontSize: "0.88rem" }}>Pay Online</p>
-              <p style={{ margin: 0, fontSize: "0.7rem", color: "var(--text-muted)" }}>UPI, Cards, GPay (In-Place)</p>
+              <p style={{ margin: "4px 0 0", fontWeight: 800, fontSize: "0.88rem" }}>Direct UPI Intent</p>
+              <p style={{ margin: 0, fontSize: "0.7rem", color: "var(--text-muted)" }}>GPay, PhonePe, Paytm, QR Code</p>
             </div>
 
             {/* Pay at Counter */}
@@ -1527,7 +1523,7 @@ function CheckoutContent() {
                 </>
               ) : (
                 <>
-                  <span>{paymentMethod === "online" ? "Pay & Place Order" : "Place Order"}</span>
+                  <span>{paymentMethod === "online" ? "Pay with UPI & Place Order" : "Place Order"}</span>
                   <span style={{ fontSize: "1.1rem" }}>→</span>
                 </>
               )}
@@ -1559,6 +1555,17 @@ function CheckoutContent() {
         >
           {toast.msg}
         </div>
+      )}
+      {/* Direct UPI Intent & QR Payment Modal */}
+      {activeUpiOrder && (
+        <UpiPaymentModal
+          orderId={activeUpiOrder.id}
+          totalAmount={Number(activeUpiOrder.totalAmount ?? activeUpiOrder.total ?? grandTotal)}
+          isOpen={upiModalOpen}
+          onClose={() => setUpiModalOpen(false)}
+          onPaymentSuccess={handleUpiSuccess}
+          onFallbackToRazorpay={handleRazorpayFallback}
+        />
       )}
     </div>
   );

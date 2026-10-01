@@ -4,16 +4,19 @@ import React, { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { api, Order, PaymentMethod, storage } from "@/lib/api";
 import { PaymentCancelledError, processRazorpayPayment } from "@/lib/razorpay";
+import UpiPaymentModal from "@/app/components/UpiPaymentModal";
 
 function PaymentContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const orderId = searchParams.get("orderId");
+  const mode = searchParams.get("mode");
 
   const [order, setOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [paying, setPaying] = useState(false);
+  const [upiModalOpen, setUpiModalOpen] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [user, setUser] = useState<{ fullName: string; phone: string } | null>(null);
 
@@ -48,8 +51,27 @@ function PaymentContent() {
     }
   };
 
-  const handlePayNow = async () => {
+  // Auto-open UPI intent if mode=upi in URL
+  useEffect(() => {
+    if (mode === "upi" && order && order.paymentMethod === "online" && order.paymentStatus !== "paid") {
+      setUpiModalOpen(true);
+    }
+  }, [mode, order]);
+
+  const handlePayUpi = () => {
+    setErrorMessage("");
+    setUpiModalOpen(true);
+  };
+
+  const handleUpiSuccess = (updatedOrder: Order) => {
+    setOrder(updatedOrder);
+    setUpiModalOpen(false);
+    router.push(`/checkout?orderId=${updatedOrder.id}&payment=success`);
+  };
+
+  const handlePayRazorpay = async () => {
     if (!order) return;
+    setUpiModalOpen(false);
     setErrorMessage("");
     setPaying(true);
 
@@ -433,40 +455,58 @@ function PaymentContent() {
           </div>
         )}
 
-        {/* Action Button */}
+        {/* Action Buttons */}
         <div style={{ marginTop: "8px", display: "flex", flexDirection: "column", gap: "10px" }}>
           {isOnline && !isPaid ? (
-            <button
-              className="btn-accent tap-scale"
-              style={{
-                width: "100%",
-                padding: "16px",
-                fontSize: "1rem",
-                borderRadius: "16px",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: "10px",
-                fontWeight: 800,
-                boxShadow: "0 8px 28px rgba(255,107,43,0.45)",
-                cursor: paying ? "not-allowed" : "pointer",
-                opacity: paying ? 0.75 : 1,
-              }}
-              onClick={handlePayNow}
-              disabled={paying}
-            >
-              {paying ? (
-                <>
-                  <span className="spinner" style={{ width: "20px", height: "20px" }} />
-                  <span>Opening Razorpay...</span>
-                </>
-              ) : (
-                <>
-                  <span>🔒</span>
-                  <span>Pay ₹{total.toFixed(0)} Securely</span>
-                </>
-              )}
-            </button>
+            <>
+              {/* Primary: Direct UPI Intent */}
+              <button
+                className="btn-accent tap-scale"
+                style={{
+                  width: "100%",
+                  padding: "16px",
+                  fontSize: "1rem",
+                  borderRadius: "16px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "10px",
+                  fontWeight: 800,
+                  boxShadow: "0 8px 28px rgba(255,107,43,0.45)",
+                  cursor: "pointer",
+                }}
+                onClick={handlePayUpi}
+              >
+                <span>⚡</span>
+                <span>Pay ₹{total.toFixed(0)} with UPI App</span>
+              </button>
+
+              {/* Secondary: Card / Netbanking via Razorpay */}
+              <button
+                className="tap-scale"
+                style={{
+                  width: "100%",
+                  padding: "12px",
+                  fontSize: "0.86rem",
+                  borderRadius: "14px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "8px",
+                  fontWeight: 600,
+                  background: "var(--tag-bg)",
+                  border: "1px solid var(--border)",
+                  color: "var(--text-secondary)",
+                  cursor: paying ? "not-allowed" : "pointer",
+                  opacity: paying ? 0.7 : 1,
+                }}
+                onClick={handlePayRazorpay}
+                disabled={paying}
+              >
+                <span>💳</span>
+                <span>{paying ? "Opening Gateway..." : "Pay via Cards / Netbanking"}</span>
+              </button>
+            </>
           ) : (
             <button
               className="btn-accent tap-scale"
@@ -505,7 +545,7 @@ function PaymentContent() {
           )}
         </div>
 
-        {/* Razorpay Trust Seal */}
+        {/* Payment Security Seal */}
         <div
           style={{
             textAlign: "center",
@@ -519,9 +559,21 @@ function PaymentContent() {
           }}
         >
           <span>🔒</span>
-          <span>Secured by Razorpay · 256-bit SSL encryption</span>
+          <span>Secured by NPCI Direct UPI Intent · 256-bit SSL</span>
         </div>
       </div>
+
+      {/* UPI Intent & QR Modal */}
+      {order && (
+        <UpiPaymentModal
+          orderId={order.id}
+          totalAmount={total}
+          isOpen={upiModalOpen}
+          onClose={() => setUpiModalOpen(false)}
+          onPaymentSuccess={handleUpiSuccess}
+          onFallbackToRazorpay={handlePayRazorpay}
+        />
+      )}
     </main>
   );
 }
