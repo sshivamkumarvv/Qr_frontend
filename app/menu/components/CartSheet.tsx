@@ -218,6 +218,20 @@ export function CartSheet({
       });
       setCart([]);
       if (paymentMethod === "online") {
+        try {
+          const redirectUrl = `${window.location.origin}/checkout?orderId=${order.id}&payment=phonepe`;
+          const res = await api.payments.initiatePayment(order.id, {
+            provider: "phonepe",
+            redirectUrl,
+          });
+          const targetUrl = res?.data?.redirectUrl || res?.redirectUrl;
+          if (targetUrl) {
+            window.location.href = targetUrl;
+            return;
+          }
+        } catch (initErr) {
+          console.warn("Direct PhonePe launch failed:", initErr);
+        }
         router.push(`/payment?orderId=${order.id}`);
       } else {
         router.push(`/orders/${order.id}`);

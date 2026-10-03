@@ -58,8 +58,39 @@ function PaymentContent() {
     }
   }, [mode, order]);
 
-  const handlePayUpi = () => {
+  const handlePayUpi = async () => {
+    if (!order) return;
     setErrorMessage("");
+    setPaying(true);
+
+    try {
+      const redirectUrl = `${window.location.origin}/checkout?orderId=${order.id}&payment=phonepe`;
+      const res = await api.payments.initiatePayment(order.id, {
+        provider: "phonepe",
+        redirectUrl,
+      });
+
+      const targetUrl = res?.data?.redirectUrl || res?.redirectUrl;
+      if (targetUrl) {
+        window.location.href = targetUrl;
+        return;
+      }
+    } catch (err: any) {
+      console.warn("Direct PhonePe launch failed, trying fallback:", err);
+      try {
+        const fallback = await api.payments.createPhonePePayment(order.id, {
+          redirectUrl: `${window.location.origin}/checkout?orderId=${order.id}&payment=phonepe`,
+        });
+        if (fallback?.redirectUrl) {
+          window.location.href = fallback.redirectUrl;
+          return;
+        }
+      } catch {}
+    } finally {
+      setPaying(false);
+    }
+
+    // Only if direct redirect couldn't happen, open fallback modal
     setUpiModalOpen(true);
   };
 
@@ -478,7 +509,7 @@ function PaymentContent() {
                 onClick={handlePayUpi}
               >
                 <span>⚡</span>
-                <span>Pay ₹{total.toFixed(0)} with UPI App</span>
+                <span>{paying ? "Opening PhonePe…" : `Pay ₹${total.toFixed(0)} via PhonePe PG`}</span>
               </button>
 
               {/* Secondary: Card / Netbanking via Razorpay */}

@@ -9,7 +9,7 @@ const nextConfig: NextConfig = {
       },
     ],
   },
-  allowedDevOrigins: ['192.168.2.105'],
+  allowedDevOrigins: ['192.168.2.108'],
   async rewrites() {
     return [
       {

@@ -68,6 +68,9 @@ function CheckoutContent() {
   // Terms and conditions acceptance
   const [acceptedTerms, setAcceptedTerms] = useState(false);
 
+  // Dynamic Platform Commission / Fee from backend (default 5%)
+  const [platformFeePercent, setPlatformFeePercent] = useState<number>(5);
+
   const showToast = (msg: string, type = "info") => {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 3000);
@@ -95,6 +98,20 @@ function CheckoutContent() {
     }
     setTableInfo(currentTable);
 
+    // Dynamic commission percentage from backend
+    if (currentTable?.platformFeePercent != null) {
+      setPlatformFeePercent(Number(currentTable.platformFeePercent));
+    } else {
+      api.payments
+        .getPricingConfig(currentTable?.restaurantId)
+        .then((cfg) => {
+          if (cfg?.platformFeePercent != null) {
+            setPlatformFeePercent(Number(cfg.platformFeePercent));
+          }
+        })
+        .catch(() => {});
+    }
+
     // 3. Load auth
     const auth = storage.getAuth();
     if (auth?.user) {
@@ -113,16 +130,30 @@ function CheckoutContent() {
 
   // Auto-load order and scroll to confirmation when returning from payment
   useEffect(() => {
-    if (orderIdParam) {
-      api.orders.findOne(orderIdParam).then((od) => {
+    if (!orderIdParam) return;
+
+    const loadAndVerify = async () => {
+      try {
+        if (paymentParam === "phonepe") {
+          try {
+            await api.payments.verifyPhonePePayment(orderIdParam);
+          } catch (e) {
+            console.warn("PhonePe auto-verification on redirect:", e);
+          }
+        }
+        const od = await api.orders.findOne(orderIdParam);
         setPlacedOrder(od);
         storage.setCart([]);
         setCart([]);
         setTimeout(() => {
           orderSuccessRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
         }, 120);
-      }).catch(() => {});
-    }
+      } catch (err) {
+        console.error("Failed to load order after payment:", err);
+      }
+    };
+
+    loadAndVerify();
   }, [orderIdParam, paymentParam]);
 
   // Countdown timer to redirect to menu after order confirmation
@@ -146,13 +177,10 @@ function CheckoutContent() {
     return sum + priceNum * qty;
   }, 0);
 
-  // Platform Convenience Fee for Self-Service Dine-In:
-  // Menu prices are already GST inclusive.
-  // Platform Convenience Fee = 6% + 18% GST on the 6% fee.
-  const baseConvenienceFee = Number(((itemTotal * 6) / 100).toFixed(2));
-  const gstOnConvenienceFee = Number(((baseConvenienceFee * 18) / 100).toFixed(2));
-  const totalConvenienceCharge = Number((baseConvenienceFee + gstOnConvenienceFee).toFixed(2));
-  const grandTotal = Number((itemTotal + totalConvenienceCharge).toFixed(2));
+  // Platform Service Fee: 5% (or configured commission percentage from backend)
+  // Example: If user adds items worth ₹1,000, 5% is ₹50 => Total = ₹1,050
+  const platformFee = Number(((itemTotal * platformFeePercent) / 100).toFixed(2));
+  const grandTotal = Number((itemTotal + platformFee).toFixed(2));
 
   const updateQuantity = (itemId: string, delta: number) => {
     setCart((prev) => {
@@ -305,9 +333,40 @@ function CheckoutContent() {
 
       // 4. Handle Payment Flow
       if (paymentMethod === "online") {
-        setPendingOrder(order);
-        setActiveUpiOrder(order);
-        setUpiModalOpen(true);
+        setPaymentStatusText("Connecting to PhonePe Secure PG…");
+        const redirectUrl = `${window.location.origin}/checkout?orderId=${order.id}&payment=phonepe`;
+
+        try {
+          const res = await api.payments.initiatePayment(order.id, {
+            provider: "phonepe",
+            redirectUrl,
+          });
+
+          const targetUrl = res?.data?.redirectUrl || res?.redirectUrl;
+          if (targetUrl) {
+            storage.setCart([]);
+            setCart([]);
+            window.location.href = targetUrl;
+            return;
+          }
+        } catch (initErr) {
+          console.warn("Direct PhonePe launch attempt failed, trying fallback:", initErr);
+          try {
+            const fallbackRes = await api.payments.createPhonePePayment(order.id, { redirectUrl });
+            if (fallbackRes?.redirectUrl) {
+              storage.setCart([]);
+              setCart([]);
+              window.location.href = fallbackRes.redirectUrl;
+              return;
+            }
+          } catch (fallbackErr: any) {
+            // If direct redirect fails (e.g. pop-up or network issue), open backup modal
+            setPendingOrder(order);
+            setActiveUpiOrder(order);
+            setUpiModalOpen(true);
+            return;
+          }
+        }
       } else {
         // Pay at counter / Cash on delivery
         storage.setCart([]);
@@ -1278,8 +1337,11 @@ function CheckoutContent() {
                   }}
                 />
               </div>
-              <p style={{ margin: "4px 0 0", fontWeight: 800, fontSize: "0.88rem" }}>Direct UPI Intent</p>
-              <p style={{ margin: 0, fontSize: "0.7rem", color: "var(--text-muted)" }}>GPay, PhonePe, Paytm, QR Code</p>
+              <div style={{ display: "flex", alignItems: "center", gap: "6px", marginTop: "4px" }}>
+                <p style={{ margin: 0, fontWeight: 800, fontSize: "0.88rem" }}>PhonePe / UPI PG</p>
+                <span style={{ fontSize: "0.6rem", background: "rgba(34,197,94,0.15)", color: "#4ade80", padding: "1px 6px", borderRadius: "10px", fontWeight: 700 }}>Instant PG</span>
+              </div>
+              <p style={{ margin: 0, fontSize: "0.7rem", color: "var(--text-muted)" }}>PhonePe, GPay, Paytm, Cards, NetBanking</p>
             </div>
 
             {/* Pay at Counter */}
@@ -1354,44 +1416,78 @@ function CheckoutContent() {
               <span style={{ fontWeight: 600 }}>₹{(Number(itemTotal) || 0).toFixed(2)}</span>
             </div>
 
-            {/* Platform Convenience Fee Section */}
+            {/* Platform Service Fee Card (5% with clear breakdown) */}
             <div
               style={{
-                padding: "10px 12px",
-                borderRadius: "12px",
-                background: "var(--tag-bg)",
-                border: "1px solid var(--border)",
+                padding: "12px 14px",
+                borderRadius: "14px",
+                background: "linear-gradient(135deg, rgba(239, 68, 68, 0.04), rgba(249, 115, 22, 0.08))",
+                border: "1px solid rgba(239, 68, 68, 0.18)",
                 display: "flex",
                 flexDirection: "column",
-                gap: "6px",
+                gap: "8px",
               }}
             >
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                  <span style={{ fontSize: "14px" }}>⚡</span>
-                  <span style={{ fontWeight: 700, fontSize: "0.82rem", color: "var(--text-primary)" }}>
-                    Platform Convenience Fee
-                  </span>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <div
+                    style={{
+                      width: "24px",
+                      height: "24px",
+                      borderRadius: "50%",
+                      background: "rgba(239, 68, 68, 0.12)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      color: "var(--accent)",
+                      fontSize: "12px",
+                      fontWeight: 800,
+                    }}
+                  >
+                    %
+                  </div>
+                  <div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                      <span style={{ fontWeight: 700, fontSize: "0.84rem", color: "var(--text-primary)" }}>
+                        Platform Service Fee ({platformFeePercent}%)
+                      </span>
+                      <span
+                        style={{
+                          fontSize: "0.65rem",
+                          fontWeight: 700,
+                          background: "rgba(239, 68, 68, 0.1)",
+                          color: "var(--accent)",
+                          padding: "1px 5px",
+                          borderRadius: "4px",
+                        }}
+                      >
+                        +{platformFeePercent}%
+                      </span>
+                    </div>
+                    <span style={{ display: "block", fontSize: "0.7rem", color: "var(--text-secondary)", marginTop: "1px" }}>
+                      ₹{(Number(itemTotal) || 0).toFixed(0)} + {platformFeePercent}% fee
+                    </span>
+                  </div>
                 </div>
-                <span style={{ fontWeight: 700, fontSize: "0.85rem", color: "var(--accent)" }}>
-                  ₹{(Number(totalConvenienceCharge) || 0).toFixed(2)}
+                <span style={{ fontWeight: 700, fontSize: "0.88rem", color: "var(--accent)" }}>
+                  +₹{(Number(platformFee) || 0).toFixed(2)}
                 </span>
               </div>
 
-              {/* Fee Breakdown */}
-              <div style={{ display: "flex", flexDirection: "column", gap: "3px", paddingLeft: "20px" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.72rem", color: "var(--text-secondary)" }}>
-                  <span>• SaaS Convenience Charge (6%)</span>
-                  <span>₹{(Number(baseConvenienceFee) || 0).toFixed(2)}</span>
-                </div>
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.72rem", color: "var(--text-secondary)" }}>
-                  <span>• GST on Convenience Fee (18%)</span>
-                  <span>₹{(Number(gstOnConvenienceFee) || 0).toFixed(2)}</span>
-                </div>
-              </div>
-
-              <div style={{ fontSize: "0.68rem", color: "var(--text-muted)", marginTop: "2px", lineHeight: 1.3 }}>
-                For table QR self-ordering, digital invoicing & instant kitchen preparation updates.
+              <div
+                style={{
+                  fontSize: "0.68rem",
+                  color: "var(--text-muted)",
+                  lineHeight: 1.35,
+                  paddingTop: "6px",
+                  borderTop: "1px dashed rgba(255, 255, 255, 0.08)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                }}
+              >
+                <span>Table QR self-ordering, digital billing & instant kitchen prep</span>
+                <span style={{ color: "var(--text-secondary)", fontWeight: 600 }}>Zero Queue</span>
               </div>
             </div>
 
@@ -1408,8 +1504,28 @@ function CheckoutContent() {
                 fontSize: "1.05rem",
               }}
             >
-              <span>Total Amount</span>
-              <span style={{ color: "var(--accent)", fontSize: "1.15rem" }}>
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  <span>To Pay</span>
+                  <span
+                    style={{
+                      fontSize: "0.68rem",
+                      fontWeight: 700,
+                      background: "rgba(34, 197, 94, 0.12)",
+                      color: "#22c55e",
+                      padding: "2px 7px",
+                      borderRadius: "6px",
+                      border: "1px solid rgba(34, 197, 94, 0.25)",
+                    }}
+                  >
+                    ₹{(Number(itemTotal) || 0).toFixed(0)} + {platformFeePercent}%
+                  </span>
+                </div>
+                <span style={{ display: "block", fontSize: "0.68rem", color: "var(--text-muted)", fontWeight: 400 }}>
+                  Item Total + {platformFeePercent}% Platform Service
+                </span>
+              </div>
+              <span style={{ color: "var(--accent)", fontSize: "1.2rem", letterSpacing: "-0.02em" }}>
                 ₹{(Number(grandTotal) || 0).toFixed(2)}
               </span>
             </div>
@@ -1523,7 +1639,11 @@ function CheckoutContent() {
                 </>
               ) : (
                 <>
-                  <span>{paymentMethod === "online" ? "Pay with UPI & Place Order" : "Place Order"}</span>
+                  <span>
+                    {paymentMethod === "online"
+                      ? `Pay ₹${(Number(grandTotal) || 0).toFixed(0)} via PhonePe`
+                      : "Place Order"}
+                  </span>
                   <span style={{ fontSize: "1.1rem" }}>→</span>
                 </>
               )}
@@ -1565,6 +1685,9 @@ function CheckoutContent() {
           onClose={() => setUpiModalOpen(false)}
           onPaymentSuccess={handleUpiSuccess}
           onFallbackToRazorpay={handleRazorpayFallback}
+          restaurantName={tableInfo?.branchName || activeUpiOrder.restaurantName || "Restaurant Dine-In"}
+          customerName={user?.fullName || fullName || "Customer"}
+          customerPhone={user?.phone || phone || "9999999999"}
         />
       )}
     </div>

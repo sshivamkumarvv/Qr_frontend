@@ -357,8 +357,64 @@ export const api = {
         }
       ),
 
+    createPhonePePayment: (
+      orderId: string,
+      options?: { redirectUrl?: string; targetApp?: string }
+    ) =>
+      request<CreatePhonePePaymentResponse>(
+        `/payments/orders/${orderId}/phonepe-create`,
+        {
+          method: "POST",
+          body: JSON.stringify(options || {}),
+        }
+      ),
+
+    verifyPhonePePayment: (orderId: string, merchantTransactionId?: string) =>
+      request<VerifyPhonePeResponse>(
+        `/payments/orders/${orderId}/phonepe-verify`,
+        {
+          method: "POST",
+          body: JSON.stringify({ merchantTransactionId }),
+        }
+      ),
+
+    refundPayment: (
+      orderId: string,
+      payload?: { amount?: number; reason?: string }
+    ) =>
+      request<RefundResponse>(`/payments/orders/${orderId}/refund`, {
+        method: "POST",
+        body: JSON.stringify(payload || {}),
+      }),
+
+    getRefundStatus: (orderId: string) =>
+      request<RefundStatusResponse>(`/payments/orders/${orderId}/refund-status`),
+
     getPaymentStatus: (orderId: string) =>
       request<PaymentStatusResponse>(`/payments/orders/${orderId}/status`),
+
+    getPricingConfig: (restaurantId?: string) =>
+      request<{
+        platformFeePercent: number;
+        defaultGateway: string;
+        supportedGateways: string[];
+        currency: string;
+      }>(`/payments/pricing-config${restaurantId ? `?restaurantId=${restaurantId}` : ""}`),
+
+    initiatePayment: (
+      orderId: string,
+      options?: { provider?: string; redirectUrl?: string; targetApp?: string }
+    ) =>
+      request<any>(`/payments/orders/${orderId}/initiate`, {
+        method: "POST",
+        body: JSON.stringify(options || {}),
+      }),
+
+    verifyOrderPayment: (orderId: string, payload?: any) =>
+      request<any>(`/payments/orders/${orderId}/verify`, {
+        method: "POST",
+        body: JSON.stringify(payload || {}),
+      }),
 
     verifyPayment: (payload: VerifyPaymentPayload) =>
       request<Order>("/payments/verify", {
@@ -446,6 +502,40 @@ export interface PaymentStatusResponse {
   isPaid: boolean;
 }
 
+export interface CreatePhonePePaymentResponse {
+  success: boolean;
+  redirectUrl: string;
+  intentUrl?: string;
+  merchantTransactionId: string;
+  orderId: string;
+  amount: number;
+  mock?: boolean;
+}
+
+export interface VerifyPhonePeResponse {
+  success: boolean;
+  status: PaymentStatus;
+  message: string;
+  order: Order;
+  data?: any;
+}
+
+export interface RefundResponse {
+  success: boolean;
+  message: string;
+  refundId: string;
+  order: Order;
+}
+
+export interface RefundStatusResponse {
+  orderId: string;
+  paymentStatus: PaymentStatus;
+  refundId: string | null;
+  refundAmount: number | null;
+  refundStatus: string | null;
+  refundReason: string | null;
+}
+
 export interface MenuItem {
   id: string;
   name: string;
@@ -526,6 +616,19 @@ export interface Order {
   paymentStatus?: PaymentStatus;
   paymentId?: string | null;
   razorpayOrderId?: string | null;
+  phonepeTransactionId?: string | null;
+  phonepeMerchantTransactionId?: string | null;
+  paymentProvider?: string | null;
+  paymentDetails?: string | null;
+  refundId?: string | null;
+  refundAmount?: number | null;
+  refundStatus?: string | null;
+  refundReason?: string | null;
+  platformFeePercent?: number;
+  platformShare?: number;
+  restaurantShare?: number;
+  settlementStatus?: string;
+  splitDetails?: string | null;
   restaurantName?: string;
   customerName?: string;
   customerPhone?: string;
@@ -654,6 +757,7 @@ export interface TableInfo {
   restaurantId: string;
   restaurantName?: string;
   restaurantLogo?: string | null;
+  platformFeePercent?: number;
   isWithinRange: boolean | null;
   distanceMeters: number | null;
   qrToken?: string;
