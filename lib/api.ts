@@ -396,6 +396,7 @@ export const api = {
     getPricingConfig: (restaurantId?: string) =>
       request<{
         platformFeePercent: number;
+        gstPercent?: number;
         defaultGateway: string;
         supportedGateways: string[];
         currency: string;

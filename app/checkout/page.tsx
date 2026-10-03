@@ -68,8 +68,9 @@ function CheckoutContent() {
   // Terms and conditions acceptance
   const [acceptedTerms, setAcceptedTerms] = useState(false);
 
-  // Dynamic Platform Commission / Fee from backend (default 5%)
+  // Dynamic Platform Commission / Fee and GST from backend (defaults: 5% fee, 18% GST)
   const [platformFeePercent, setPlatformFeePercent] = useState<number>(5);
+  const [gstPercent, setGstPercent] = useState<number>(18);
 
   const showToast = (msg: string, type = "info") => {
     setToast({ msg, type });
@@ -98,19 +99,21 @@ function CheckoutContent() {
     }
     setTableInfo(currentTable);
 
-    // Dynamic commission percentage from backend
+    // Dynamic commission and GST percentage from backend
     if (currentTable?.platformFeePercent != null) {
       setPlatformFeePercent(Number(currentTable.platformFeePercent));
-    } else {
-      api.payments
-        .getPricingConfig(currentTable?.restaurantId)
-        .then((cfg) => {
-          if (cfg?.platformFeePercent != null) {
-            setPlatformFeePercent(Number(cfg.platformFeePercent));
-          }
-        })
-        .catch(() => {});
     }
+    api.payments
+      .getPricingConfig(currentTable?.restaurantId)
+      .then((cfg) => {
+        if (cfg?.platformFeePercent != null) {
+          setPlatformFeePercent(Number(cfg.platformFeePercent));
+        }
+        if (cfg?.gstPercent != null) {
+          setGstPercent(Number(cfg.gstPercent));
+        }
+      })
+      .catch(() => {});
 
     // 3. Load auth
     const auth = storage.getAuth();
@@ -177,10 +180,16 @@ function CheckoutContent() {
     return sum + priceNum * qty;
   }, 0);
 
-  // Platform Service Fee: 5% (or configured commission percentage from backend)
-  // Example: If user adds items worth ₹1,000, 5% is ₹50 => Total = ₹1,050
-  const platformFee = Number(((itemTotal * platformFeePercent) / 100).toFixed(2));
-  const grandTotal = Number((itemTotal + platformFee).toFixed(2));
+  // Platform Convenience Fee + 18% GST:
+  // Example on ₹1,000 subtotal:
+  // - 5% Platform Fee = ₹50.00
+  // - 18% GST on Fee = ₹9.00
+  // Total Platform Charge = ₹59.00
+  // Grand Total = ₹1,059.00
+  const basePlatformFee = Number(((itemTotal * platformFeePercent) / 100).toFixed(2));
+  const gstOnPlatformFee = Number(((basePlatformFee * gstPercent) / 100).toFixed(2));
+  const totalPlatformCharge = Number((basePlatformFee + gstOnPlatformFee).toFixed(2));
+  const grandTotal = Number((itemTotal + totalPlatformCharge).toFixed(2));
 
   const updateQuantity = (itemId: string, delta: number) => {
     setCart((prev) => {
@@ -1416,62 +1425,91 @@ function CheckoutContent() {
               <span style={{ fontWeight: 600 }}>₹{(Number(itemTotal) || 0).toFixed(2)}</span>
             </div>
 
-            {/* Platform Service Fee Card (5% with clear breakdown) */}
+            {/* Platform Convenience Fee Card (5% Service Charge + 18% GST) */}
             <div
               style={{
                 padding: "12px 14px",
                 borderRadius: "14px",
-                background: "linear-gradient(135deg, rgba(239, 68, 68, 0.04), rgba(249, 115, 22, 0.08))",
-                border: "1px solid rgba(239, 68, 68, 0.18)",
+                background: "linear-gradient(135deg, rgba(239, 68, 68, 0.05), rgba(249, 115, 22, 0.08))",
+                border: "1px solid rgba(239, 68, 68, 0.2)",
                 display: "flex",
                 flexDirection: "column",
-                gap: "8px",
+                gap: "10px",
               }}
             >
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                <div style={{ display: "flex", alignItems: "flex-start", gap: "10px" }}>
                   <div
                     style={{
-                      width: "24px",
-                      height: "24px",
+                      width: "28px",
+                      height: "28px",
                       borderRadius: "50%",
-                      background: "rgba(239, 68, 68, 0.12)",
+                      background: "rgba(239, 68, 68, 0.14)",
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
                       color: "var(--accent)",
-                      fontSize: "12px",
+                      fontSize: "13px",
                       fontWeight: 800,
+                      flexShrink: 0,
+                      marginTop: "1px",
                     }}
                   >
                     %
                   </div>
                   <div>
-                    <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                      <span style={{ fontWeight: 700, fontSize: "0.84rem", color: "var(--text-primary)" }}>
-                        Platform Service Fee ({platformFeePercent}%)
+                    <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+                      <span style={{ fontWeight: 700, fontSize: "0.86rem", color: "var(--text-primary)" }}>
+                        Platform Convenience Fee
                       </span>
                       <span
                         style={{
                           fontSize: "0.65rem",
                           fontWeight: 700,
-                          background: "rgba(239, 68, 68, 0.1)",
+                          background: "rgba(239, 68, 68, 0.12)",
                           color: "var(--accent)",
-                          padding: "1px 5px",
+                          padding: "1px 6px",
                           borderRadius: "4px",
                         }}
                       >
-                        +{platformFeePercent}%
+                        {platformFeePercent}% + {gstPercent}% GST
                       </span>
                     </div>
-                    <span style={{ display: "block", fontSize: "0.7rem", color: "var(--text-secondary)", marginTop: "1px" }}>
-                      ₹{(Number(itemTotal) || 0).toFixed(0)} + {platformFeePercent}% fee
+                    <span style={{ display: "block", fontSize: "0.7rem", color: "var(--text-secondary)", marginTop: "2px" }}>
+                      Table QR ordering, digital billing & instant kitchen prep
                     </span>
                   </div>
                 </div>
-                <span style={{ fontWeight: 700, fontSize: "0.88rem", color: "var(--accent)" }}>
-                  +₹{(Number(platformFee) || 0).toFixed(2)}
+                <span style={{ fontWeight: 800, fontSize: "0.95rem", color: "var(--accent)" }}>
+                  +₹{(Number(totalPlatformCharge) || 0).toFixed(2)}
                 </span>
+              </div>
+
+              {/* Sub-itemization: Base Service Charge + GST breakdown */}
+              <div
+                style={{
+                  padding: "8px 12px",
+                  borderRadius: "10px",
+                  background: "rgba(0, 0, 0, 0.2)",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "5px",
+                  fontSize: "0.72rem",
+                  border: "1px solid rgba(255, 255, 255, 0.05)",
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", color: "var(--text-secondary)" }}>
+                  <span>• Platform Service Charge ({platformFeePercent}% of ₹{(Number(itemTotal) || 0).toFixed(0)})</span>
+                  <span style={{ fontWeight: 600, color: "var(--text-primary)" }}>
+                    ₹{(Number(basePlatformFee) || 0).toFixed(2)}
+                  </span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", color: "var(--text-secondary)" }}>
+                  <span>• GST on Platform Charge ({gstPercent}%)</span>
+                  <span style={{ fontWeight: 600, color: "var(--text-primary)" }}>
+                    ₹{(Number(gstOnPlatformFee) || 0).toFixed(2)}
+                  </span>
+                </div>
               </div>
 
               <div
@@ -1479,15 +1517,15 @@ function CheckoutContent() {
                   fontSize: "0.68rem",
                   color: "var(--text-muted)",
                   lineHeight: 1.35,
-                  paddingTop: "6px",
+                  paddingTop: "4px",
                   borderTop: "1px dashed rgba(255, 255, 255, 0.08)",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "space-between",
                 }}
               >
-                <span>Table QR self-ordering, digital billing & instant kitchen prep</span>
-                <span style={{ color: "var(--text-secondary)", fontWeight: 600 }}>Zero Queue</span>
+                <span>Direct kitchen routing & table delivery</span>
+                <span style={{ color: "#22c55e", fontWeight: 700 }}>Zero Queue Service</span>
               </div>
             </div>
 
@@ -1497,7 +1535,7 @@ function CheckoutContent() {
                 display: "flex",
                 justifyContent: "space-between",
                 alignItems: "center",
-                paddingTop: "8px",
+                paddingTop: "10px",
                 marginTop: "4px",
                 borderTop: "1px solid var(--border)",
                 fontWeight: 900,
@@ -1518,14 +1556,14 @@ function CheckoutContent() {
                       border: "1px solid rgba(34, 197, 94, 0.25)",
                     }}
                   >
-                    ₹{(Number(itemTotal) || 0).toFixed(0)} + {platformFeePercent}%
+                    ₹{(Number(itemTotal) || 0).toFixed(0)} + ₹{(Number(totalPlatformCharge) || 0).toFixed(0)} fee
                   </span>
                 </div>
                 <span style={{ display: "block", fontSize: "0.68rem", color: "var(--text-muted)", fontWeight: 400 }}>
-                  Item Total + {platformFeePercent}% Platform Service
+                  Item Total (₹{(Number(itemTotal) || 0).toFixed(0)}) + Platform Fee ({platformFeePercent}%) + GST ({gstPercent}%)
                 </span>
               </div>
-              <span style={{ color: "var(--accent)", fontSize: "1.2rem", letterSpacing: "-0.02em" }}>
+              <span style={{ color: "var(--accent)", fontSize: "1.25rem", letterSpacing: "-0.02em" }}>
                 ₹{(Number(grandTotal) || 0).toFixed(2)}
               </span>
             </div>
